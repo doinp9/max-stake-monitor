@@ -3,12 +3,6 @@
   "name": "Max Stake Monitor",
   "version": "1.0.0",
   "description": "Captures and displays maximum stake values from bookmaker API responses",
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "max-stake-monitor@doinp9",
-      "strict_min_version": "109.0"
-    }
-  },
   "permissions": [
     "storage",
     "activeTab"
@@ -20,9 +14,20 @@
     "*://*.bet365.bet.br/*"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "service_worker": "background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "*://*.bet365.com/*",
+        "*://*.bet365.es/*",
+        "*://*.bet365.com.br/*",
+        "*://*.bet365.bet.br/*"
+      ],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": [
         "*://*.bet365.com/*",
@@ -41,16 +46,5 @@
   "icons": {
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["injected.js"],
-      "matches": [
-        "*://*.bet365.com/*",
-        "*://*.bet365.es/*",
-        "*://*.bet365.com.br/*",
-        "*://*.bet365.bet.br/*"
-      ]
-    }
-  ]
+  }
 }
