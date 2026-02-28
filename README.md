@@ -2,7 +2,9 @@
 
 A Chrome extension that captures and displays maximum stake values from bookmaker API responses — no more digging through DevTools.
 
-![Max Stake Monitor Screenshot](screenshots/overlay.png)
+![Max Stake Monitor Popup](screenshots/popup.png)
+
+![Max Stake Monitor Overlay](screenshots/overlay.png)
 
 ## Features
 
