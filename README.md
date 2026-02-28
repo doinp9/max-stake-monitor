@@ -1,10 +1,10 @@
 # 💰 Max Stake Monitor
 
-A Chrome extension that captures and displays maximum stake values from bookmaker API responses — no more digging through DevTools.
-
-![Max Stake Monitor Popup](screenshots/popup.png)
+A Chrome & Firefox extension that captures and displays maximum stake values from bookmaker API responses — no more digging through DevTools.
 
 ![Max Stake Monitor Overlay](screenshots/overlay.png)
+
+![Max Stake Monitor Popup](screenshots/popup.png)
 
 ## Features
 
@@ -17,7 +17,8 @@ A Chrome extension that captures and displays maximum stake values from bookmake
 * **Extension badge** — clean static icon, no clutter
 * **Bilingual** — toggle between English and Portuguese (EN/PT)
 * **All markets** — works with moneyline, draw, over/under, spreads, and any other market type
-* **Privacy first** — all data stays local in `chrome.storage.local`, nothing is sent anywhere
+* **Cross-browser** — works on Chrome and Firefox
+* **Privacy first** — all data stays local in browser storage, nothing is sent anywhere
 
 ## How It Works
 
@@ -40,30 +41,49 @@ Entries are color-coded relative to your **average** max stake:
 | 🟡 Yellow | Between | Normal range |
 | 🔴 Red | ≤ 0.5× average | Low liquidity / potentially limited |
 
-## Install (Developer Mode)
+## Install — Chrome
 
 1. Download or clone this repository
 2. Open Chrome and go to `chrome://extensions`
 3. Enable **Developer mode** (toggle in top right)
 4. Click **Load unpacked**
-5. Select the extension folder
+5. Select the `chrome/` folder
 6. Visit your bookmaker — enjoy!
+
+## Install — Firefox
+
+1. Download or clone this repository
+2. Open Firefox and go to `about:debugging#/runtime/this-firefox`
+3. Click **Load Temporary Add-on**
+4. Select the `manifest.json` inside the `firefox/` folder
+5. Visit your bookmaker — enjoy!
+
+> **Note:** Temporary add-ons are removed when Firefox restarts. For permanent install, the extension needs to be signed via [addons.mozilla.org](https://addons.mozilla.org).
 
 ## Project Structure
 
 ```
 max-stake-monitor/
-├── manifest.json    # Chrome extension manifest (Manifest V3)
-├── injected.js      # MAIN world interceptor (JSON.parse, XHR, fetch)
-├── content.js       # Overlay UI + bridge to background
-├── popup.html       # Log viewer panel
-├── popup.js         # Log rendering, i18n, export
-├── background.js    # Service worker (persistent storage)
-├── icons/
-│   ├── icon48.png
-│   └── icon128.png
+├── chrome/                # Chrome extension
+│   ├── manifest.json
+│   ├── injected.js
+│   ├── content.js
+│   ├── popup.html
+│   ├── popup.js
+│   ├── background.js
+│   └── icons/
+├── firefox/               # Firefox extension
+│   ├── manifest.json
+│   ├── injected.js
+│   ├── content.js
+│   ├── popup.html
+│   ├── popup.js
+│   ├── background.js
+│   └── icons/
+├── screenshots/
 ├── LICENSE
-└── PRIVACY.md
+├── PRIVACY.md
+└── README.md
 ```
 
 ## CSV Export Format
