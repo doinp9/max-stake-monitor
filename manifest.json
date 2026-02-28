@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Max Stake Monitor",
+  "version": "1.0.0",
+  "description": "Captures and displays maximum stake values from bookmaker API responses",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.bet365.com/*",
+    "*://*.bet365.es/*",
+    "*://*.bet365.com.br/*",
+    "*://*.bet365.bet.br/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.bet365.com/*",
+        "*://*.bet365.es/*",
+        "*://*.bet365.com.br/*",
+        "*://*.bet365.bet.br/*"
+      ],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.bet365.com/*",
+        "*://*.bet365.es/*",
+        "*://*.bet365.com.br/*",
+        "*://*.bet365.bet.br/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Max Stake Monitor"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
