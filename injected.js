@@ -12,148 +12,204 @@
     return false;
   }
 
-  function findMaxStakes(obj, path, results) {
-    path = path || '';
-    results = results || [];
-    if (obj === null || obj === undefined || typeof obj !== 'object') return results;
-    if (Array.isArray(obj)) {
-      for (var i = 0; i < obj.length; i++) findMaxStakes(obj[i], path + '[' + i + ']', results);
-    } else {
-      for (var key in obj) {
-        if (!obj.hasOwnProperty(key)) continue;
-        var val = obj[key];
-        if (key === 'ms' && (typeof val === 'number' || typeof val === 'string')) {
-          var numVal = parseFloat(val);
-          if (!isNaN(numVal) && numVal > 0) results.push({ path: path ? path + '.' + key : key, value: numVal });
-        }
-        if (typeof val === 'object' && val !== null) findMaxStakes(val, path ? path + '.' + key : key, results);
-      }
-    }
-    return results;
+  // Find match name from a string — looks for " @ " or " v " or " vs "
+  function isMatchName(str) {
+    return typeof str === 'string' && str.length > 5 && str.length < 120 &&
+      (str.indexOf(' @ ') !== -1 || str.indexOf(' v ') !== -1 || str.indexOf(' vs ') !== -1);
   }
 
-  // Find ALL strings in the JSON that look like match names
-  function findAllStrings(obj, depth, results) {
+  // Search an object for any match name string
+  function findMatchNameInObj(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    // Check fd first (known field)
+    if (obj.fd && isMatchName(obj.fd)) return obj.fd;
+    for (var k in obj) {
+      if (obj.hasOwnProperty(k) && isMatchName(obj[k])) return obj[k];
+    }
+    return null;
+  }
+
+  // Deep search for match name
+  function deepFindMatchName(obj, depth) {
     depth = depth || 0;
-    results = results || [];
-    if (depth > 8 || obj === null || obj === undefined || typeof obj !== 'object') return results;
+    if (depth > 6 || obj === null || obj === undefined || typeof obj !== 'object') return null;
     if (Array.isArray(obj)) {
-      for (var i = 0; i < obj.length; i++) findAllStrings(obj[i], depth + 1, results);
+      for (var i = 0; i < obj.length; i++) {
+        var r = deepFindMatchName(obj[i], depth + 1);
+        if (r) return r;
+      }
     } else {
+      if (obj.fd && isMatchName(obj.fd)) return obj.fd;
       for (var key in obj) {
         if (!obj.hasOwnProperty(key)) continue;
         var val = obj[key];
-        if (typeof val === 'string' && val.length > 5 && val.length < 120) {
-          // Match patterns: "Team A @ Team B", "Team A v Team B", "Team A vs Team B"
-          if (val.indexOf(' @ ') !== -1 || val.indexOf(' v ') !== -1 || val.indexOf(' vs ') !== -1) {
-            results.push({ key: key, value: val });
-          }
+        if (isMatchName(val)) return val;
+        if (typeof val === 'object' && val !== null) {
+          var r2 = deepFindMatchName(val, depth + 1);
+          if (r2) return r2;
         }
-        if (typeof val === 'object' && val !== null) findAllStrings(val, depth + 1, results);
       }
     }
-    return results;
+    return null;
   }
 
-  function emitResult(msResults, json, source) {
-    var primary = null;
-    for (var i = 0; i < msResults.length; i++) {
-      if (msResults[i].path.indexOf('bt') !== -1) { primary = msResults[i]; break; }
+  // Build a lookup map: fixtureId → match name from la[] array
+  function buildMatchLookup(la) {
+    var lookup = {};
+    if (!la || !Array.isArray(la)) return lookup;
+    for (var i = 0; i < la.length; i++) {
+      if (!la[i]) continue;
+      var name = findMatchNameInObj(la[i]);
+      if (name) {
+        // Map by fi (fixture ID) if available
+        if (la[i].fi) lookup[la[i].fi] = name;
+        // Also map by index
+        lookup['__idx_' + i] = name;
+      }
     }
-    if (!primary) primary = msResults[0];
+    return lookup;
+  }
 
-    var eventInfo = null;
-    try {
-      var bt = json.bt || json.Bt || json.BT;
-      var la = json.la;
+  // Get match name for a specific bt entry using la lookup
+  function getMatchForBt(btEntry, matchLookup, allLaNames) {
+    if (!btEntry) return null;
 
-      // Strategy 1: la[].fd
-      var matchName = null;
-      if (la && Array.isArray(la)) {
-        for (var li = 0; li < la.length; li++) {
-          if (la[li]) {
-            // Check fd first, then every string field in la[i]
-            if (la[li].fd && la[li].fd.length > 3) { matchName = la[li].fd; break; }
-            // Scan all fields in la[i] for match pattern
-            for (var lk in la[li]) {
-              var lv = la[li][lk];
-              if (typeof lv === 'string' && lv.length > 5 &&
-                  (lv.indexOf(' @ ') !== -1 || lv.indexOf(' v ') !== -1 || lv.indexOf(' vs ') !== -1)) {
-                matchName = lv;
-                break;
-              }
+    // Try fixture ID match
+    if (btEntry.fi && matchLookup[btEntry.fi]) return matchLookup[btEntry.fi];
+
+    // Try scanning bt entry itself for match name
+    var fromBt = findMatchNameInObj(btEntry);
+    if (fromBt) return fromBt;
+
+    // For parlays: if bt entry has pt[] (parts/legs), try to get all match names
+    if (btEntry.pt && Array.isArray(btEntry.pt) && btEntry.pt.length > 1) {
+      var names = [];
+      for (var p = 0; p < btEntry.pt.length; p++) {
+        var leg = btEntry.pt[p];
+        if (!leg) continue;
+        var legName = null;
+        if (leg.fi && matchLookup[leg.fi]) legName = matchLookup[leg.fi];
+        if (!legName) legName = findMatchNameInObj(leg);
+        if (legName && names.indexOf(legName) === -1) names.push(legName);
+      }
+      if (names.length > 0) return names.join(' + ');
+    }
+
+    // For parlays: if multiple la entries exist and this bt has no single fi, combine all
+    if (allLaNames.length > 1 && !btEntry.fi) {
+      // Check if this might be a parlay (has ot/bt type indicating accumulator)
+      return allLaNames.join(' + ');
+    }
+
+    return null;
+  }
+
+  function emitResult(json, source) {
+    var bt = json.bt || json.Bt || json.BT;
+    if (!bt || !Array.isArray(bt)) return;
+
+    var la = json.la;
+    var matchLookup = buildMatchLookup(la);
+
+    // Collect all la match names for parlay fallback
+    var allLaNames = [];
+    if (la && Array.isArray(la)) {
+      for (var li = 0; li < la.length; li++) {
+        var n = la[li] ? findMatchNameInObj(la[li]) : null;
+        if (n) allLaNames.push(n);
+      }
+    }
+
+    var now = Date.now();
+    var emitted = 0;
+
+    for (var i = 0; i < bt.length; i++) {
+      var entry = bt[i];
+      if (!entry || entry.ms === undefined || entry.ms === null) continue;
+
+      var ms = parseFloat(entry.ms);
+      if (isNaN(ms) || ms <= 0) continue;
+
+      var matchName = getMatchForBt(entry, matchLookup, allLaNames);
+
+      // If still no name, deep search as last resort
+      if (!matchName && i === 0) matchName = deepFindMatchName(json);
+
+      var odds = entry.re || null;
+
+      // Detect if this is a parlay/accumulator
+      var isParlay = false;
+      if (entry.pt && Array.isArray(entry.pt) && entry.pt.length > 1) isParlay = true;
+      if (entry.ot === 3 || entry.bt === 2) isParlay = true; // common parlay type codes
+
+      // For parlay: prefix with fold count
+      if (isParlay && matchName && matchName.indexOf('+') === -1) {
+        // matchName might be just one game, try to build full parlay name
+        var parlayNames = [];
+        if (entry.pt && Array.isArray(entry.pt)) {
+          for (var pp = 0; pp < entry.pt.length; pp++) {
+            var pn = null;
+            if (entry.pt[pp] && entry.pt[pp].fi && matchLookup[entry.pt[pp].fi]) {
+              pn = matchLookup[entry.pt[pp].fi];
             }
-            if (matchName) break;
+            if (pn && parlayNames.indexOf(pn) === -1) parlayNames.push(pn);
           }
         }
+        if (parlayNames.length > 1) matchName = parlayNames.join(' + ');
+        else if (allLaNames.length > 1) matchName = allLaNames.join(' + ');
       }
 
-      // Strategy 2: scan bt[] for match name strings
-      if (!matchName && bt && Array.isArray(bt)) {
-        for (var bi = 0; bi < bt.length; bi++) {
-          if (!bt[bi]) continue;
-          for (var bk in bt[bi]) {
-            var bv = bt[bi][bk];
-            if (typeof bv === 'string' && bv.length > 5 &&
-                (bv.indexOf(' @ ') !== -1 || bv.indexOf(' v ') !== -1 || bv.indexOf(' vs ') !== -1)) {
-              matchName = bv;
-              break;
-            }
-          }
-          if (matchName) break;
+      // Label parlays
+      var displayName = matchName || null;
+      if (isParlay && displayName) {
+        var legCount = (entry.pt && entry.pt.length) || allLaNames.length || '?';
+        displayName = legCount + '-Fold: ' + displayName;
+      } else if (isParlay && !displayName) {
+        var legCount2 = (entry.pt && entry.pt.length) || allLaNames.length || '?';
+        displayName = legCount2 + '-Fold Parlay';
+      }
+
+      console.log('%c[B365-MS] ✅ MAX STAKE: ' + ms + (displayName ? ' | ' + displayName : ''),
+        'color: #FFDF00; background: #016443; padding: 4px 8px; font-weight: bold; font-size: 14px;');
+
+      window.postMessage({
+        type: 'B365_MAX_STAKE',
+        data: {
+          maxStake: ms,
+          source: source,
+          method: source,
+          eventInfo: {
+            eventName: displayName,
+            odds: odds,
+          },
+          timestamp: now + i, // +i ms offset so entries have unique timestamps and correct order
         }
-      }
+      }, '*');
 
-      // Strategy 3: deep scan entire JSON
-      if (!matchName) {
-        var allStrings = findAllStrings(json);
-        if (allStrings.length > 0) {
-          // Prefer fd key
-          var fdMatch = null;
-          for (var si = 0; si < allStrings.length; si++) {
-            if (allStrings[si].key === 'fd') { fdMatch = allStrings[si].value; break; }
-          }
-          matchName = fdMatch || allStrings[0].value;
-        }
-      }
+      emitted++;
+    }
 
-      // Get odds
-      var odds = null;
-      if (bt && bt[0]) odds = bt[0].re || null;
-
-      eventInfo = {
-        eventName: matchName,
-        selectionName: null,
-        marketName: null,
-        odds: odds,
-      };
-    } catch (e) { }
-
-    console.log('%c[B365-MS] ✅ MAX STAKE: ' + primary.value + (eventInfo && eventInfo.eventName ? ' | ' + eventInfo.eventName : ''),
-      'color: #FFDF00; background: #016443; padding: 4px 8px; font-weight: bold; font-size: 14px;');
-
-    window.postMessage({
-      type: 'B365_MAX_STAKE',
-      data: {
-        maxStake: primary.value,
-        allMaxStakes: msResults,
-        source: source,
-        method: source,
-        eventInfo: eventInfo,
-        timestamp: Date.now(),
-      }
-    }, '*');
+    if (emitted > 1) {
+      console.log('%c[B365-MS] 📋 ' + emitted + ' bets captured from one betslip',
+        'color: #FFDF00; background: #016443; padding: 4px 8px; font-weight: bold;');
+    }
   }
 
   function checkForMaxStake(obj, source) {
     try {
       if (typeof obj !== 'object' || obj === null) return;
       if (!(obj.bt || obj.Bt || obj.BT)) return;
-      var msResults = findMaxStakes(obj);
-      if (msResults.length > 0) {
-        var text = JSON.stringify(obj);
-        if (!isDuplicate(text)) emitResult(msResults, obj, source);
+      var bt = obj.bt || obj.Bt || obj.BT;
+      // Must have at least one entry with ms
+      var hasMs = false;
+      if (Array.isArray(bt)) {
+        for (var i = 0; i < bt.length; i++) {
+          if (bt[i] && bt[i].ms !== undefined) { hasMs = true; break; }
+        }
       }
+      if (!hasMs) return;
+      var text = JSON.stringify(obj);
+      if (!isDuplicate(text)) emitResult(obj, source);
     } catch (e) { }
   }
 
